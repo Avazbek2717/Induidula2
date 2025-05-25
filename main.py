@@ -13,7 +13,7 @@ from aiogram.types import InputFile
 from aiogram.types import BufferedInputFile
 from aiogram.types import URLInputFile
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton,ReplyKeyboardRemove
-
+group_username='swimmingpool7'
 
 
 PAYMENT_PROVIDER_TOKEN="398062629:TEST:999999999_F91D8F69C042267444B74CC0B3C747757EB0E065"
@@ -39,7 +39,15 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 
 @dp.message(CommandStart())
 async def start(message: Message, bot: Bot, state: FSMContext):
-    await message.answer("Assalomu alaykum! 🏊‍♂️ Suv va sport saroylari bo'yicha ma'lumotlar botiga xush kelibsiz.",reply_markup=main_menu_keyboard())
+    await message.answer(
+    "<b>👋 Assalomu alaykum, hurmatli foydalanuvchi!</b>\n\n"
+    "🏊‍♂️ <i>Suv va sport saroylari</i> haqida barcha ma’lumotlarni bu bot orqali tez va oson topishingiz mumkin.\n\n"
+    "🔹 Boshlash uchun quyidagi <b>menyudan</b> kerakli bo‘limni tanlang.\n\n"
+    "⏳ Sizni kutib qolamiz!",
+    parse_mode="HTML",
+    reply_markup=main_menu_keyboard()
+)
+
 
 
 
@@ -86,6 +94,7 @@ async def show_palace_details(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📍 Lokatsiya", callback_data=f"location_{palace_id}")],
         [InlineKeyboardButton(text="📝 Band qilish", callback_data=f"book_{palace_id}")],
+        [InlineKeyboardButton(text="👥 Rasmiy guruhga o'tish", url="https://t.me/swimmingpool7")],
         [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="show_palaces")]
     ])
 
@@ -178,20 +187,18 @@ async def process_visit_time(msg: Message, state: FSMContext):
 
 @dp.message(BookingForm.hours)
 async def process_hours(msg: Message, state: FSMContext):
-    # Check if message contains text
     if not msg.text:
         await msg.answer("❌ Iltimos, soat sonini matn shaklida yuboring!")
         return
     
     try:
-        hours = int(msg.text.strip())  # Remove whitespace and convert to int
+        hours = int(msg.text.strip())  
         
-        # Validate hours (optional - add reasonable limits)
         if hours <= 0:
             await msg.answer("❌ Soat soni 0 dan katta bo'lishi kerak!")
             return
         
-        if hours > 24:  # Example: max 24 hours
+        if hours > 24: 
             await msg.answer("❌ Soat soni 24 dan oshmasligi kerak!")
             return
             
@@ -199,7 +206,6 @@ async def process_hours(msg: Message, state: FSMContext):
         await msg.answer("❌ Iltimos, soatni butun son shaklida kiriting (masalan: 2, 5, 8).")
         return
 
-    # Update state with validated hours
     await state.update_data(hours=hours)
     data = await state.get_data()
 
@@ -209,7 +215,6 @@ async def process_hours(msg: Message, state: FSMContext):
         await state.clear()
         return
 
-    # Database operations with error handling
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
@@ -232,10 +237,8 @@ async def process_hours(msg: Message, state: FSMContext):
 
     payment = price_per_hour * hours
 
-    # Save booking data
     await state.update_data(hours=hours, payment=str(payment))
 
-    # Show booking summary
     text = (
         "🏊‍♂️ *Band qilish ma'lumotlari:* \n\n"
         f"🔹 *Hovuz ID:* `{palace_id}`\n"
@@ -298,7 +301,6 @@ async def confirm_booking_handler(callback: CallbackQuery, state: FSMContext):
     conn.commit()
     conn.close()
 
-    # 💳 To'lovni boshlash
     await create_payment(price=int(float(payment)), user_id=user_id)
 
     await callback.message.answer("✅ To‘lov uchun invoice yuborildi. To‘lovni amalga oshiring, so‘ngra buyurtma kodi sizga yuboriladi.")
@@ -328,6 +330,20 @@ async def pre_checkout_query_handler(pre_checkout_query: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
 
 
+
+
+def orqaga_button():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ Orqaga")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+
+
+
 @dp.message(F.successful_payment)
 async def successful_payment_handler(message: types.Message):
     user_id = message.from_user.id
@@ -337,7 +353,6 @@ async def successful_payment_handler(message: types.Message):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # 🔁 Eng oxirgi to‘lov qilinmagan (null access_id) bandlovga key'larni qo‘shish
     cursor.execute("""
         UPDATE bookings
         SET access_id = ?
@@ -348,30 +363,59 @@ async def successful_payment_handler(message: types.Message):
             ORDER BY id DESC LIMIT 1
         )
     """, (access_id, user_id))
-
     conn.commit()
 
-    # 🔎 Hozirgi bandlovni olish
     cursor.execute("""
-        SELECT payment_amount
+        SELECT payment_amount, palace_id
         FROM bookings
         WHERE access_id = ?
     """, (access_id,))
     row = cursor.fetchone()
+
+    if not row:
+        await message.answer("❌ Xatolik: bandlov topilmadi.")
+        conn.close()
+        return
+
+    payment, palace_id = row
+
+    cursor.execute("SELECT group_id, name FROM palaces WHERE id = ?", (palace_id,))
+    palace_row = cursor.fetchone()
     conn.close()
 
-    if row:
-        payment = row[0]
-        await message.answer(
-            f"✅ Bandlov tasdiqlandi!\n"
-            f"💵 To‘lov: {int(payment):,} so‘m\n"
-            f"🧾 Maxfiy kalit: <code>{access_id}</code>",
+    if palace_row:
+        group_id, palace_name = palace_row
+    else:
+        group_id = None
+        palace_name = "Noma'lum saroy"
+
+
+    await message.answer(
+        f"✅ Bandlov tasdiqlandi!\n"
+        f"💵 To‘lov: {int(payment):,} so‘m\n"
+        f"🧾 Maxfiy kalit: <code>{access_id}</code>",
+        parse_mode="HTML",reply_markup=orqaga_button()
+    )
+
+    if group_id:
+        await bot.send_message(
+            chat_id=-group_id,
+            text=(
+                f"📢 Yangi bandlov!\n\n"
+                f"Saroy: {palace_name}\n"
+                f"Foydalanuvchi: @{message.from_user.username or message.from_user.full_name} (ID: {user_id})\n"
+                f"To‘lov: {int(payment):,} so‘m\n"
+                f"Maxfiy kalit: <code>{access_id}</code>"
+            ),
             parse_mode="HTML"
         )
-    else:
-        await message.answer("❌ Xatolik: bandlov topilmadi.")
 
-
+@dp.message(F.text == "⬅️ Orqaga")
+async def back_to_main_menu(message: Message):
+    await message.answer(
+        "🔙 Asosiy menyuga qaytdingiz. Kerakli bo‘limni tanlang:",
+        reply_markup=main_menu_keyboard()  # bu sizdagi asosiy menyu keyboard funksiyasi
+    )
 
 
 # --- Orqaga tugmasi uchun callback ---
@@ -406,10 +450,9 @@ async def about_bot(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "main_menu")
 async def main_menu(callback: CallbackQuery):
-    # bu yerda asosiy menyu tugmalarini qayta chiqarasiz
     await callback.message.edit_text(
         "🏠 Asosiy menyuga qaytdingiz. Quyidagi bo'limlardan birini tanlang:",
-        reply_markup=main_menu_keyboard()  # bu sizda oldin yaratilgan menyu bo'lishi kerak
+        reply_markup=main_menu_keyboard() 
     )
 
 
@@ -420,5 +463,4 @@ async def main():
 
 if __name__ == "__main__":
     create_db()
-    add_sample_data()
     asyncio.run(main())

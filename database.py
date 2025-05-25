@@ -136,7 +136,7 @@ def get_palace_details_by_id(palace_id: int):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT name, location, description, latitude, longitude, admin_name, admin_phone, price_per_hour, group_id
+        SELECT name, location, description, latitude, longitude, admin_name, admin_phone, price_per_hour
         FROM palaces WHERE id = ?
     """, (palace_id,))
     result = cursor.fetchone()
